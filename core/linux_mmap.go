@@ -52,10 +52,9 @@ func (here *MmapMemory) OpenFile(filePath string, cap int32) error {
 		filePtr.Close()
 		return err
 	}
-
+	here.readHeader()
 	here.filePtr = filePtr
 	here.cap = cap
-	here.size = 4
 	here.filePath = filePath
 	here.isOpened = true
 	here.mapping = mapping
@@ -115,8 +114,7 @@ func (here *MmapMemory) Read(bs []byte) (int32, error) {
 func (here *MmapMemory) readHeader() {
 	temp := here.mapping[0:4]
 	num := util.BytesToInt32(temp)
-	fmt.Println(num)
-	here.size = num
+	here.size = num + 4
 }
 
 func (here *MmapMemory) writeHeader(size int32) {
