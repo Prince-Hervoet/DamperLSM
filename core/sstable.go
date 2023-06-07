@@ -35,7 +35,7 @@ type FileIndexInfo struct {
 
 func NewSstableController(dir string) *SstableController {
 	return &SstableController{
-		headList: make([]*SstableHeadNode, util.DEFAULT_LEVEL),
+		headList: make([]*SstableHeadNode, util.SSTABLE_LEVEL_SIZE),
 		maxLevel: 0,
 		nodeSize: 0,
 		dir:      dir,

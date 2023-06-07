@@ -1,18 +1,18 @@
 package core
 
 import (
+	"DamperLSM/pojo"
 	"DamperLSM/util"
 	"errors"
 	"io/ioutil"
 	"os"
-	"strconv"
 	"strings"
-	"time"
 )
 
 type MemoryController struct {
 	running   *MemoryTable
 	immuTable *MemoryTable
+	scer      *SstableController
 	waitQueue chan *MemoryTable
 	dir       string
 }
@@ -33,6 +33,7 @@ func NewMemoryController(dir string) *MemoryController {
 		running:   nil,
 		immuTable: nil,
 		dir:       dir,
+		scer:      NewSstableController(dir),
 		waitQueue: make(chan *MemoryTable, 64),
 	}
 }
@@ -93,25 +94,17 @@ func (here *MemoryController) Init() error {
 		memoryStruct: st,
 	}
 	here.running = mtable
+	go here.flush()
 	return nil
 }
 
 func (here *MemoryController) Write(key string, value []byte) error {
-	walBuffer := make([]byte, 0, 9)
-	walBuffer = append(walBuffer, byte(1))
-	keyBs := []byte(key)
-	bs := util.Int32ToBytes(int32(len(keyBs)))
-	walBuffer = append(walBuffer, bs...)
-	walBuffer = append(walBuffer, keyBs...)
-	bs = util.Int32ToBytes(int32(len(value)))
-	walBuffer = append(walBuffer, bs...)
-	walBuffer = append(walBuffer, value...)
+	wf := pojo.NewWalForm(1, key, value)
+	walBuffer := wf.ToBytes()
 	res := here.running.walMapping.Append(walBuffer)
-
 	if res == 0 {
 		// 空间已满
-		id := strconv.FormatInt(int64(time.Now().UnixMicro()), 10)
-		nFileName := here.dir + util.IMMU_WAL_SAVE_FILE_NAME + id
+		nFileName := util.GetNewFileName(here.dir + util.IMMU_WAL_SAVE_FILE_NAME)
 		os.Rename(here.dir+here.running.fileName, nFileName)
 		here.immuTable = here.running
 		here.immuTable.walMapping.Close()
@@ -145,6 +138,13 @@ func (here *MemoryController) Read(key string) ([]byte, error) {
 	return v.Value, nil
 }
 
+func (here *MemoryController) flush() {
+	for v := range here.waitQueue {
+		here.scer.DumpMemory(v)
+	}
+}
+
+// 从文件中读取信息恢复跳表结构
 func ReadWalFileToSkipTable(filePath string) (*SkipTable, error) {
 	filePtr, err := os.OpenFile(filePath, os.O_RDWR, 0666)
 	if err != nil {
@@ -156,6 +156,17 @@ func ReadWalFileToSkipTable(filePath string) (*SkipTable, error) {
 	buffer := make([]byte, 4)
 	current := int32(0)
 
+	// 判断魔数
+	_, err = filePtr.Read(opBuffer)
+	if err != nil {
+		return nil, err
+	}
+	magicNumber := int8(opBuffer[0])
+	if magicNumber != util.MAGIC_NUMBER {
+		return nil, errors.New("magic number error")
+	}
+
+	// 读取文件数据容量
 	_, err = filePtr.Read(buffer)
 	if err != nil {
 		return nil, err
@@ -163,12 +174,14 @@ func ReadWalFileToSkipTable(filePath string) (*SkipTable, error) {
 	cap := util.BytesToInt32(buffer)
 	st := NewSkipTable()
 	for current < cap {
+		// 读取操作类型
 		_, err := filePtr.Read(opBuffer)
 		if err != nil {
 			return nil, err
 		}
 		op := int8(opBuffer[0])
 
+		// 读取key的长度信息
 		_, err = filePtr.Read(buffer)
 		if err != nil {
 			return nil, err
@@ -176,11 +189,14 @@ func ReadWalFileToSkipTable(filePath string) (*SkipTable, error) {
 
 		keyLen := util.BytesToInt32(buffer)
 
+		// 读取value的长度信息
 		_, err = filePtr.Read(buffer)
 		if err != nil {
 			return nil, err
 		}
 		valueLen := util.BytesToInt32(buffer)
+
+		// 根据上述信息读取key和value的字节数组
 		keyBuffer := make([]byte, keyLen)
 		valueBuffer := make([]byte, valueLen)
 
@@ -196,7 +212,7 @@ func ReadWalFileToSkipTable(filePath string) (*SkipTable, error) {
 
 		current += int32(1 + 4 + 4 + keyLen + valueLen)
 
-		if op == 0 {
+		if op == util.OP_TYPE_DELETE {
 			continue
 		}
 

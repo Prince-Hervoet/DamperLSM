@@ -3,8 +3,11 @@ package util
 import (
 	"encoding/binary"
 	"os"
+
+	gonanoid "github.com/matoous/go-nanoid/v2"
 )
 
+// 字节数组转16位int
 func BytesToInt16(data []byte) int16 {
 	return int16(binary.BigEndian.Uint16(data))
 }
@@ -15,6 +18,7 @@ func Int16ToBytes(num int16) []byte {
 	return ans
 }
 
+// 字节数组转32位int
 func BytesToInt32(data []byte) int32 {
 	return int32(binary.BigEndian.Uint32(data))
 }
@@ -49,10 +53,17 @@ func IntMin(a, b int) int {
 	return a
 }
 
+// 获取文件大小
 func GetFileSize(filePath string) (int64, error) {
 	fi, err := os.Stat(filePath)
 	if err != nil {
 		return 0, err
 	}
 	return fi.Size(), nil
+}
+
+// 获取一个新的文件名称
+func GetNewFileName(preFileName string) string {
+	id, _ := gonanoid.New()
+	return preFileName + id
 }

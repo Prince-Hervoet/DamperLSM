@@ -52,12 +52,13 @@ func (here *MmapMemory) OpenFile(filePath string, cap int32) error {
 		filePtr.Close()
 		return err
 	}
-	here.readHeader()
 	here.filePtr = filePtr
 	here.cap = cap
 	here.filePath = filePath
 	here.isOpened = true
 	here.mapping = mapping
+	here.readHeader()
+	mapping[0] = byte(util.MAGIC_NUMBER)
 	return nil
 }
 
@@ -94,7 +95,6 @@ func (here *MmapMemory) Append(data []byte) int {
 	}
 	here.size += int32(len(data))
 	here.writeHeader(here.size)
-	// here.readHeader()
 	return 1
 }
 
@@ -112,18 +112,19 @@ func (here *MmapMemory) Read(bs []byte) (int32, error) {
 }
 
 func (here *MmapMemory) readHeader() {
-	temp := here.mapping[0:4]
+	temp := here.mapping[1:5]
 	num := util.BytesToInt32(temp)
-	here.size = num + 4
+	here.size = num + 5
 }
 
 func (here *MmapMemory) writeHeader(size int32) {
 	bs := util.Int32ToBytes(size)
-	for i := 0; i < 4; i++ {
-		here.mapping[i] = bs[i]
+	for i := 1; i < 5; i++ {
+		here.mapping[i] = bs[i-1]
 	}
 }
 
+// 系统调用mmap映射
 func mmap(file *os.File, cap int32) ([]byte, error) {
 	bs, err := syscall.Mmap(int(file.Fd()), 0, int(cap), syscall.PROT_WRITE|syscall.PROT_READ, syscall.MAP_SHARED)
 	if err != nil {
@@ -132,6 +133,7 @@ func mmap(file *os.File, cap int32) ([]byte, error) {
 	return bs, nil
 }
 
+// 解除映射绑定
 func munmap(mapping []byte) error {
 	err := syscall.Munmap(mapping)
 	if err != nil {
@@ -140,6 +142,7 @@ func munmap(mapping []byte) error {
 	return nil
 }
 
+// 设定文件映射区大小
 func grow(file *os.File, cap int32) error {
 	err := file.Truncate(int64(cap))
 	if err != nil {
