@@ -8,11 +8,11 @@ const (
 	FILE_NAME_ADD           = ".db"
 
 	// 操作类型
-	OP_TYPE_WRITE  = 1
-	OP_TYPE_DELETE = 2
+	OP_TYPE_WRITE  = 0
+	OP_TYPE_DELETE = 1
 
 	// wal文件默认大小
-	WAL_FILE_MAX_SIZE = 25
+	WAL_FILE_MAX_SIZE = 131072
 
 	// 魔数
 	MAGIC_NUMBER = int8(64)

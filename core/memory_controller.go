@@ -101,7 +101,7 @@ func (here *memoryController) recoverFromFiles() error {
 }
 
 func (here *memoryController) write(key string, value []byte) error {
-	wf := pojo.NewWalForm(1, key, value)
+	wf := pojo.NewWalForm(util.OP_TYPE_WRITE, key, value)
 	walBuffer := wf.ToBytes()
 	res := here.running.walMapping.append(walBuffer)
 	if res == 0 {
@@ -124,7 +124,7 @@ func (here *memoryController) write(key string, value []byte) error {
 	}
 	here.running.memoryStruct.Insert(key, &tableDataNode{
 		Value:   value,
-		Deleted: 0,
+		Deleted: util.OP_TYPE_WRITE,
 	})
 	return nil
 }
@@ -147,15 +147,15 @@ func readWalFileToSkipTable(mm []byte) (*SkipTable, error) {
 		return nil, errors.New("empty wal file")
 	}
 
-	// 判断魔数
-	if int8(mm[0]) != util.MAGIC_NUMBER {
-		return nil, errors.New("magic number error")
-	}
+	// // 判断魔数
+	// if int8(mm[0]) != util.MAGIC_NUMBER {
+	// 	return nil, errors.New("magic number error")
+	// }
 
 	st := NewSkipTable()
 	// 获取size
-	cap := util.BytesToInt32(mm[1:5])
-	current := int32(5)
+	cap := util.BytesToInt32(mm[0:4])
+	current := int32(4)
 
 	for current < cap {
 		op := int8(mm[current])

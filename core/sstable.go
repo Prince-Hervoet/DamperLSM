@@ -101,7 +101,6 @@ func (here *SstableController) recoverFromFiles() error {
 		if !strings.HasPrefix(fileName, util.DB_SAVE_FILE_NAME) {
 			continue
 		}
-
 		ss := strings.Split(fileName, "_")
 		if len(ss) < 3 {
 			continue
@@ -142,25 +141,59 @@ func (here *SstableController) recoverFromFiles() error {
 
 func (here *SstableController) dumpTaskFunc() {
 	for v := range dumpQueue {
-		here.dumpMemory(v)
-		// filePath := here.dir + v.fileName
-		err := os.Remove(v.fileName)
+		fileName, count := here.dumpMemory(v)
+		filepath := here.dir + fileName
+		file, err := os.Open(filepath)
+		if err != nil {
+			fmt.Println(err.Error())
+			continue
+		}
+		keys, err := getIndexDataFromFile(filepath)
+		if err != nil {
+			fmt.Println(err.Error())
+			continue
+		}
+		node := &SstableNode{
+			next:     nil,
+			fileName: fileName,
+			file:     file,
+			count:    count,
+			keys:     keys,
+		}
+		here.addNode(1, node)
+		err = os.Remove(v.fileName)
 		if err != nil {
 			fmt.Println(err.Error())
 		}
 	}
 }
 
+// func (here *SstableController) dumpMemoryMmap(immuTable *memoryTable) (string, int32) {
+// 	if immuTable == nil {
+// 		return "", -1
+// 	}
+// 	count := here.headList[0].size + 1
+// 	id := strconv.FormatInt(int64(count), 10)
+// 	nFileName := util.DB_SAVE_FILE_NAME + "_" + "1" + "_" + id
+// 	mm := openShareMemory()
+// 	err := mm.openFile(here.dir+nFileName, util.WAL_FILE_MAX_SIZE)
+// 	if err != nil {
+// 		return "", -1
+// 	}
+
+// }
+
 // 将数据持久化到磁盘文件中
-func (here *SstableController) dumpMemory(immuTable *memoryTable) {
+func (here *SstableController) dumpMemory(immuTable *memoryTable) (string, int32) {
 	if immuTable == nil {
-		return
+		return "", -1
 	}
-	id := strconv.FormatInt(int64(here.headList[0].size+1), 10)
+	count := here.headList[0].size + 1
+	id := strconv.FormatInt(int64(count), 10)
 	nFileName := util.DB_SAVE_FILE_NAME + "_" + "1" + "_" + id
 	filePtr, err := os.OpenFile(here.dir+nFileName, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
 	if err != nil {
-		return
+		return "", -1
 	}
 
 	target := immuTable.memoryStruct
@@ -197,6 +230,8 @@ func (here *SstableController) dumpMemory(immuTable *memoryTable) {
 	dataLenBs := util.Int32ToBytes(dataSizeRun)
 	filePtr.Write(dataLenBs)
 	filePtr.Write(indexLenBs)
+
+	return nFileName, count
 }
 
 func (here *SstableController) addNode(level int32, node *SstableNode) {
@@ -244,15 +279,17 @@ func searchKvFromFile(filePtr *os.File, offset int32) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	deleted := int8(buffer[0])
-	if deleted == 1 {
+	if deleted == util.OP_TYPE_DELETE {
 		return nil, false, nil
 	}
 	valueLen := util.BytesToInt32(buffer[1:5])
 	valueBuffer := make([]byte, valueLen)
 	_, err = filePtr.Read(valueBuffer)
 	if err != nil {
+
 		return nil, false, err
 	}
+
 	return valueBuffer, true, nil
 }
 

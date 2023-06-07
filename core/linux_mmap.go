@@ -58,7 +58,6 @@ func (here *mmapMemory) openFile(filePath string, cap int32) error {
 	here.isOpened = true
 	here.mapping = mapping
 	here.readHeader()
-	mapping[0] = byte(util.MAGIC_NUMBER)
 	return nil
 }
 
@@ -112,15 +111,15 @@ func (here *mmapMemory) read(bs []byte) (int32, error) {
 }
 
 func (here *mmapMemory) readHeader() {
-	temp := here.mapping[1:5]
+	temp := here.mapping[0:4]
 	num := util.BytesToInt32(temp)
-	here.size = num + 5
+	here.size = num + 4
 }
 
 func (here *mmapMemory) writeHeader(size int32) {
 	bs := util.Int32ToBytes(size)
-	for i := 1; i < 5; i++ {
-		here.mapping[i] = bs[i-1]
+	for i := 0; i < 4; i++ {
+		here.mapping[i] = bs[i]
 	}
 }
 

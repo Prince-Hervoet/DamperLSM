@@ -14,12 +14,15 @@ func main() {
 	}
 
 	start := time.Now().UnixMicro()
-	// bs.Set("1", []byte("2jk3434"))
-	// bs.Set("1231", []byte("3434"))
-	b, _ := bs.Get("1231")
+	// for i := 0; i < 12; i++ {
+	// 	bs.Set(strconv.FormatInt(int64(i), 10), []byte("12234234234132ajilsdfjl123123123ij3123"))
+	// }
+	b, _ := bs.Get("3")
 	end := time.Now().UnixMicro()
 
-	fmt.Println((end - start))
+	fmt.Print("耗时: ")
+	fmt.Print((end - start))
+	fmt.Println("ns")
 	fmt.Println("ans: " + string(b))
 
 	for {
