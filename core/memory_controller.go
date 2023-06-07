@@ -4,48 +4,45 @@ import (
 	"DamperLSM/pojo"
 	"DamperLSM/util"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
 )
 
 type MemoryController struct {
-	running   *MemoryTable
-	immuTable *MemoryTable
-	scer      *SstableController
-	waitQueue chan *MemoryTable
+	// 正在使用的内存结构
+	running *memoryTable
+	// 正在持久化的内存结构
+	immuTable *memoryTable
 	dir       string
 }
 
-type MemoryTable struct {
+type memoryTable struct {
 	fileName     string
 	walMapping   *MmapMemory
 	memoryStruct *SkipTable
 }
 
-type TableDataNode struct {
+type tableDataNode struct {
 	Value   []byte
 	Deleted bool
 }
 
-func NewMemoryController(dir string) *MemoryController {
+func newMemoryController(dir string) *MemoryController {
 	return &MemoryController{
 		running:   nil,
 		immuTable: nil,
 		dir:       dir,
-		scer:      NewSstableController(dir),
-		waitQueue: make(chan *MemoryTable, 64),
 	}
 }
 
-func newMemoryTable(dir, fileName string) (*MemoryTable, error) {
-	mm := OpenShareMemory()
-	err := mm.OpenFile(dir+fileName, util.WAL_FILE_MAX_SIZE)
+func newMemoryTable(dir, fileName string) (*memoryTable, error) {
+	mm := openShareMemory()
+	err := mm.openFile(dir+fileName, util.WAL_FILE_MAX_SIZE)
 	if err != nil {
 		return nil, err
 	}
-	return &MemoryTable{
+	return &memoryTable{
 		fileName:     fileName,
 		walMapping:   mm,
 		memoryStruct: NewSkipTable(),
@@ -53,7 +50,9 @@ func newMemoryTable(dir, fileName string) (*MemoryTable, error) {
 }
 
 func (here *MemoryController) RecoverFromFiles() error {
-	walFileName := ""
+
+	hasWalFile := false
+	var st *SkipTable = nil
 	immuWalFileNames := make([]string, 0, 8)
 
 	dirInfo, err := ioutil.ReadDir(here.dir)
@@ -66,49 +65,51 @@ func (here *MemoryController) RecoverFromFiles() error {
 			continue
 		}
 		fileName := file.Name()
-		if fileName == util.WAL_SAVE_FILE_NAME && walFileName == "" {
-			walFileName = fileName
+		if fileName == util.WAL_SAVE_FILE_NAME {
+			hasWalFile = true
 		} else if strings.HasPrefix(fileName, util.IMMU_WAL_SAVE_FILE_NAME) {
 			immuWalFileNames = append(immuWalFileNames, fileName)
 		}
 	}
 
-	var st *SkipTable = nil
-	if walFileName == "" {
-		walFileName = util.WAL_SAVE_FILE_NAME
-		st = NewSkipTable()
-	} else {
-		st, err = ReadWalFileToSkipTable(here.dir + walFileName)
+	// 打开共享内存，如果不存在wal文件则自动创建一个
+	mm := openShareMemory()
+	err = mm.openFile(here.dir+util.WAL_SAVE_FILE_NAME, util.WAL_FILE_MAX_SIZE)
+	if err != nil {
+		return err
+	}
+
+	if hasWalFile {
+		// 如果目录中原来有wal文件，则进行恢复
+		st, err = readWalFileToSkipTable(mm.mapping)
 		if err != nil {
 			return err
 		}
 	}
 
-	mm := OpenShareMemory()
-	err = mm.OpenFile(here.dir+util.WAL_SAVE_FILE_NAME, util.WAL_FILE_MAX_SIZE)
-	if err != nil {
-		return err
+	if st == nil {
+		st = NewSkipTable()
 	}
-	mtable := &MemoryTable{
-		fileName:     walFileName,
+
+	mtable := &memoryTable{
+		fileName:     util.WAL_SAVE_FILE_NAME,
 		walMapping:   mm,
 		memoryStruct: st,
 	}
 	here.running = mtable
-	go here.flush()
 	return nil
 }
 
-func (here *MemoryController) Write(key string, value []byte) error {
+func (here *MemoryController) write(key string, value []byte) error {
 	wf := pojo.NewWalForm(1, key, value)
 	walBuffer := wf.ToBytes()
-	res := here.running.walMapping.Append(walBuffer)
+	res := here.running.walMapping.append(walBuffer)
 	if res == 0 {
 		// 空间已满
 		nFileName := util.GetNewFileName(here.dir + util.IMMU_WAL_SAVE_FILE_NAME)
 		os.Rename(here.dir+here.running.fileName, nFileName)
 		here.immuTable = here.running
-		here.immuTable.walMapping.Close()
+		here.immuTable.walMapping.close()
 		here.immuTable.walMapping = nil
 		here.immuTable.fileName = nFileName
 		mt, err := newMemoryTable(here.dir, util.WAL_SAVE_FILE_NAME)
@@ -116,129 +117,70 @@ func (here *MemoryController) Write(key string, value []byte) error {
 			return err
 		}
 		here.running = mt
-		here.running.walMapping.Append(walBuffer)
-		here.waitQueue <- here.immuTable
+		here.running.walMapping.append(walBuffer)
+		dumpQueue <- here.immuTable
 	} else if res == -1 {
 		return errors.New("write error")
 	}
-	here.running.memoryStruct.Insert(key, &TableDataNode{
+	here.running.memoryStruct.Insert(key, &tableDataNode{
 		Value:   value,
 		Deleted: false,
 	})
 	return nil
 }
 
-func (here *MemoryController) Read(key string) ([]byte, bool) {
+func (here *MemoryController) read(key string) ([]byte, bool) {
 	_, info, has := here.running.memoryStruct.Get(key)
 
-	if !has {
+	if !has && here.immuTable != nil {
 		_, info, has = here.immuTable.memoryStruct.Get(key)
 	}
-
-	if !has {
-		_, info.Value, has = here.scer.SearchData(key)
-	}
-
 	if !has {
 		return nil, has
-	}
-
-	if info != nil {
-		if info.Deleted {
-			return nil, false
-		}
-		return info.Value, true
 	}
 	return info.Value, true
 }
 
-func (here *MemoryController) flush() {
-	for v := range here.waitQueue {
-		fmt.Println("asdfe3333")
-		here.scer.DumpMemory(v)
+// 从共享内存中恢复跳表结构
+func readWalFileToSkipTable(mm []byte) (*SkipTable, error) {
+	if len(mm) < 5 {
+		return nil, errors.New("empty wal file")
 	}
-}
-
-// 从文件中读取信息恢复跳表结构
-func ReadWalFileToSkipTable(filePath string) (*SkipTable, error) {
-	filePtr, err := os.OpenFile(filePath, os.O_RDWR, 0666)
-	if err != nil {
-		return nil, err
-	}
-	defer filePtr.Close()
-
-	opBuffer := make([]byte, 1)
-	buffer := make([]byte, 4)
-	current := int32(0)
 
 	// 判断魔数
-	_, err = filePtr.Read(opBuffer)
-	if err != nil {
-		return nil, err
-	}
-	magicNumber := int8(opBuffer[0])
-	if magicNumber != util.MAGIC_NUMBER {
+	if int8(mm[0]) != util.MAGIC_NUMBER {
 		return nil, errors.New("magic number error")
 	}
 
-	// 读取文件数据容量
-	_, err = filePtr.Read(buffer)
-	if err != nil {
-		return nil, err
-	}
-	cap := util.BytesToInt32(buffer)
 	st := NewSkipTable()
+	// 获取size
+	cap := util.BytesToInt32(mm[1:5])
+	current := int32(5)
+
 	for current < cap {
-		// 读取操作类型
-		_, err := filePtr.Read(opBuffer)
-		if err != nil {
-			return nil, err
-		}
-		op := int8(opBuffer[0])
+		op := int8(mm[current])
+		current += 1
 
-		// 读取key的长度信息
-		_, err = filePtr.Read(buffer)
-		if err != nil {
-			return nil, err
-		}
+		keyLen := util.BytesToInt32(mm[current : current+4])
+		current += 4
 
-		keyLen := util.BytesToInt32(buffer)
+		valueLen := util.BytesToInt32(mm[current : current+4])
+		current += 4
 
-		// 读取value的长度信息
-		_, err = filePtr.Read(buffer)
-		if err != nil {
-			return nil, err
-		}
-		valueLen := util.BytesToInt32(buffer)
+		key := string(mm[current : current+keyLen])
+		current += keyLen
 
-		// 根据上述信息读取key和value的字节数组
-		keyBuffer := make([]byte, keyLen)
-		valueBuffer := make([]byte, valueLen)
-
-		_, err = filePtr.Read(keyBuffer)
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = filePtr.Read(valueBuffer)
-		if err != nil {
-			return nil, err
-		}
-
-		current += int32(1 + 4 + 4 + keyLen + valueLen)
-
-		key := string(keyBuffer)
+		value := mm[current : current+valueLen]
+		current += valueLen
 
 		deleted := false
 		if op == util.OP_TYPE_DELETE {
 			deleted = true
 		}
-
-		td := &TableDataNode{
-			Value:   valueBuffer,
+		st.Insert(key, &tableDataNode{
+			Value:   value,
 			Deleted: deleted,
-		}
-		st.Insert(key, td)
+		})
 	}
 
 	return st, nil

@@ -14,6 +14,8 @@ import (
 // 	    数据区			  索引区                 元数据区
 // valueLen value	offset keyLen key    dataAreaLen indexAreaLen
 
+var dumpQueue chan *memoryTable = make(chan *memoryTable, 64)
+
 // 磁盘映射结构
 type SstableController struct {
 	headList []*SstableHeadNode
@@ -58,10 +60,7 @@ func NewSstableController(dir string) *SstableController {
 	}
 }
 
-func (here *SstableController) SearchData(key string) (string, []byte, bool) {
-	if here.nodeSize == 0 {
-		return "", nil, false
-	}
+func (here *SstableController) searchData(key string) ([]byte, bool) {
 	headList := here.headList
 	for i := 0; i < len(headList); i++ {
 		shn := headList[i]
@@ -73,16 +72,16 @@ func (here *SstableController) SearchData(key string) (string, []byte, bool) {
 			if _, has := node.keys[key]; has {
 				offset := node.keys[key]
 				filePath := here.dir + node.fileName
-				key, value, err := searchKvFromFile(filePath, offset)
+				value, err := searchKvFromFile(filePath, offset)
 				if err != nil {
-					return "", nil, false
+					return nil, false
 				}
-				return key, value, true
+				return value, true
 			}
 			node = node.next
 		}
 	}
-	return "", nil, false
+	return nil, false
 }
 
 func (here *SstableController) RecoverFromFiles() error {
@@ -129,10 +128,17 @@ func (here *SstableController) RecoverFromFiles() error {
 		}
 		here.addNode(int32(levelNumber), node)
 	}
+	go here.DumpTaskFunc()
 	return nil
 }
 
-func (here *SstableController) DumpMemory(immuTable *MemoryTable) {
+func (here *SstableController) DumpTaskFunc() {
+	for v := range dumpQueue {
+		here.DumpMemory(v)
+	}
+}
+
+func (here *SstableController) DumpMemory(immuTable *memoryTable) {
 	if immuTable == nil {
 		return
 	}
@@ -183,16 +189,17 @@ func (here *SstableController) DumpMemory(immuTable *MemoryTable) {
 	// 写入元数据区
 	indexLenBs := util.Int32ToBytes(indexSizeRun)
 	dataLenBs := util.Int32ToBytes(dataSizeRun)
-	filePtr.Write(indexLenBs)
 	filePtr.Write(dataLenBs)
+	filePtr.Write(indexLenBs)
 }
 
 func (here *SstableController) addNode(level int32, node *SstableNode) {
-	headNode := here.headList[level]
+	headNode := here.headList[level-1]
 	run := headNode.head
 
 	if run.next == nil {
 		run.next = node
+		headNode.size += 1
 		return
 	}
 
@@ -215,53 +222,31 @@ func (here *SstableController) addNode(level int32, node *SstableNode) {
 	headNode.size += 1
 }
 
-func searchKvFromFile(filePath string, offset int32) (string, []byte, error) {
+func searchKvFromFile(filePath string, offset int32) ([]byte, error) {
 	filePtr, err := os.OpenFile(filePath, os.O_RDWR, 0666)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	defer filePtr.Close()
-
 	// 设置偏移量
-	_, err = filePtr.Seek(int64(offset), 0)
+	_, err = filePtr.Seek(int64(offset), io.SeekStart)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-
-	// 数据区的格式 keyLen valueLen key value
-	//             4      4        ?   ?
-
+	// 数据区的格式  valueLen  value
+	//              4         ?
 	lenBuffer := make([]byte, 4)
-
 	_, err = filePtr.Read(lenBuffer)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-
-	keyLen := util.BytesToInt32(lenBuffer)
-
-	_, err = filePtr.Read(lenBuffer)
-	if err != nil {
-		return "", nil, err
-	}
-
 	valueLen := util.BytesToInt32(lenBuffer)
-
-	keyBuffer := make([]byte, keyLen)
 	valueBuffer := make([]byte, valueLen)
-
-	_, err = filePtr.Read(keyBuffer)
-	if err != nil {
-		return "", nil, err
-	}
-
 	_, err = filePtr.Read(valueBuffer)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-
-	key := string(keyBuffer)
-	return key, valueBuffer, nil
+	return valueBuffer, nil
 }
 
 func getIndexDataFromFile(filePath string) (map[string]int32, error) {
@@ -308,19 +293,16 @@ func getIndexDataFromFile(filePath string) (map[string]int32, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	current := int32(0)
 	for current < indexAreaLen {
 		offset := util.BytesToInt32(buffer[current : current+4])
-		keyLen := util.BytesToInt32(buffer[current+4 : current+8])
-		keyBuffer := make([]byte, keyLen)
-		_, err = filePtr.Read(keyBuffer)
-		if err != nil {
-			return nil, err
-		}
+		current += 4
+		keyLen := util.BytesToInt32(buffer[current : current+4])
+		current += 4
+		keyBuffer := buffer[current : current+keyLen]
+		current += keyLen
 		key := string(keyBuffer)
 		keys[key] = offset
-		current += (4 + 4 + keyLen)
 	}
 	return keys, nil
 }

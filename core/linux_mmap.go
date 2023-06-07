@@ -17,7 +17,7 @@ type MmapMemory struct {
 	cap      int32
 }
 
-func OpenShareMemory() *MmapMemory {
+func openShareMemory() *MmapMemory {
 	return &MmapMemory{
 		filePath: "",
 		filePtr:  nil,
@@ -29,7 +29,7 @@ func (here *MmapMemory) Size() int32 {
 	return here.size
 }
 
-func (here *MmapMemory) OpenFile(filePath string, cap int32) error {
+func (here *MmapMemory) openFile(filePath string, cap int32) error {
 	if here.isOpened {
 		return errors.New("a mapping has been established")
 	}
@@ -62,7 +62,7 @@ func (here *MmapMemory) OpenFile(filePath string, cap int32) error {
 	return nil
 }
 
-func (here *MmapMemory) Close() error {
+func (here *MmapMemory) close() error {
 	if !here.isOpened {
 		return nil
 	}
@@ -81,7 +81,7 @@ func (here *MmapMemory) Close() error {
 	return nil
 }
 
-func (here *MmapMemory) Append(data []byte) int {
+func (here *MmapMemory) append(data []byte) int {
 	if !here.isOpened {
 		return -1
 	} else if len(data)+int(here.size) > int(here.cap) {
@@ -98,7 +98,7 @@ func (here *MmapMemory) Append(data []byte) int {
 	return 1
 }
 
-func (here *MmapMemory) Read(bs []byte) (int32, error) {
+func (here *MmapMemory) read(bs []byte) (int32, error) {
 	if !here.isOpened {
 		return 0, errors.New("please open a file")
 	}

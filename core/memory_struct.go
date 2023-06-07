@@ -20,7 +20,7 @@ type SkipTableNode struct {
 	Levels []*SkipTableNode
 	Prev   *SkipTableNode
 	Key    string
-	Value  *TableDataNode
+	Value  *tableDataNode
 }
 
 func NewSkipTable() *SkipTable {
@@ -31,7 +31,7 @@ func NewSkipTable() *SkipTable {
 	}
 }
 
-func newSkipTableNode(key string, value *TableDataNode, needLevel int32) *SkipTableNode {
+func newSkipTableNode(key string, value *tableDataNode, needLevel int32) *SkipTableNode {
 	return &SkipTableNode{
 		Levels: make([]*SkipTableNode, needLevel+1),
 		Key:    key,
@@ -39,7 +39,7 @@ func newSkipTableNode(key string, value *TableDataNode, needLevel int32) *SkipTa
 	}
 }
 
-func (here *SkipTable) Insert(key string, value *TableDataNode) {
+func (here *SkipTable) Insert(key string, value *tableDataNode) {
 	if key == "" {
 		return
 	}
@@ -74,7 +74,7 @@ func (here *SkipTable) Insert(key string, value *TableDataNode) {
 	here.size += 1
 }
 
-func (here *SkipTable) Get(key string) (string, *TableDataNode, bool) {
+func (here *SkipTable) Get(key string) (string, *tableDataNode, bool) {
 	if here.size == 0 {
 		return "", nil, false
 	}
