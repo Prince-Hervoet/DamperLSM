@@ -1,6 +1,7 @@
 package core
 
 import (
+	pojo "DamperLSM/po"
 	"DamperLSM/util"
 	"errors"
 	"io/ioutil"
@@ -24,7 +25,7 @@ type memoryTable struct {
 
 type tableDataNode struct {
 	Value   []byte
-	Deleted bool
+	Deleted int8
 }
 
 func newMemoryController(dir string) *memoryController {
@@ -100,7 +101,7 @@ func (here *memoryController) recoverFromFiles() error {
 }
 
 func (here *memoryController) write(key string, value []byte) error {
-	wf := newWalForm(1, key, value)
+	wf := pojo.NewWalForm(1, key, value)
 	walBuffer := wf.ToBytes()
 	res := here.running.walMapping.append(walBuffer)
 	if res == 0 {
@@ -123,7 +124,7 @@ func (here *memoryController) write(key string, value []byte) error {
 	}
 	here.running.memoryStruct.Insert(key, &tableDataNode{
 		Value:   value,
-		Deleted: false,
+		Deleted: 0,
 	})
 	return nil
 }
@@ -172,13 +173,9 @@ func readWalFileToSkipTable(mm []byte) (*SkipTable, error) {
 		value := mm[current : current+valueLen]
 		current += valueLen
 
-		deleted := false
-		if op == util.OP_TYPE_DELETE {
-			deleted = true
-		}
 		st.Insert(key, &tableDataNode{
 			Value:   value,
-			Deleted: deleted,
+			Deleted: op,
 		})
 	}
 

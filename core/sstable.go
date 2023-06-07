@@ -1,6 +1,7 @@
 package core
 
 import (
+	pojo "DamperLSM/po"
 	"DamperLSM/util"
 	"fmt"
 	"io"
@@ -73,11 +74,11 @@ func (here *SstableController) searchData(key string) ([]byte, bool) {
 		for node != nil {
 			if _, has := node.keys[key]; has {
 				offset := node.keys[key]
-				value, err := searchKvFromFile(node.file, offset)
+				value, has, err := searchKvFromFile(node.file, offset)
 				if err != nil {
 					return nil, false
 				}
-				return value, true
+				return value, has
 			}
 			node = node.next
 		}
@@ -150,6 +151,7 @@ func (here *SstableController) dumpTaskFunc() {
 	}
 }
 
+// 将数据持久化到磁盘文件中
 func (here *SstableController) dumpMemory(immuTable *memoryTable) {
 	if immuTable == nil {
 		return
@@ -170,15 +172,11 @@ func (here *SstableController) dumpMemory(immuTable *memoryTable) {
 	// 写入数据区
 	for run != nil {
 		value := run.Value
-		if value.Deleted {
-			run = run.Levels[0]
-			continue
-		}
-		valueLenBs := util.Int32ToBytes(int32(len(value.Value)))
-		filePtr.Write(valueLenBs)
-		filePtr.Write(value.Value)
+		valueLen := int32(len(value.Value))
+		daf := pojo.NewDataAreaForm(value.Deleted, valueLen, value.Value)
+		filePtr.Write(daf.ToBytes())
 		offsets = append(offsets, dataSizeRun)
-		dataSizeRun += (4 + int32(len(value.Value)))
+		dataSizeRun += (1 + 4 + valueLen)
 		run = run.Levels[0]
 	}
 
@@ -187,11 +185,8 @@ func (here *SstableController) dumpMemory(immuTable *memoryTable) {
 	i := 0
 	for run != nil {
 		keyBs := []byte(run.Key)
-		bs := util.Int32ToBytes(offsets[i])
-		keyLenBs := util.Int32ToBytes(int32(len(keyBs)))
-		filePtr.Write(bs)
-		filePtr.Write(keyLenBs)
-		filePtr.Write(keyBs)
+		iaf := pojo.NewIndexAreaForm(offsets[i], int32(len(keyBs)), run.Key)
+		filePtr.Write(iaf.ToBytes())
 		indexSizeRun += (4 + 4 + int32(len(keyBs)))
 		run = run.Levels[0]
 		i += 1
@@ -233,28 +228,32 @@ func (here *SstableController) addNode(level int32, node *SstableNode) {
 	headNode.size += 1
 }
 
-func searchKvFromFile(filePtr *os.File, offset int32) ([]byte, error) {
+func searchKvFromFile(filePtr *os.File, offset int32) ([]byte, bool, error) {
 	defer filePtr.Seek(0, 0)
-
 	// 设置偏移量
 	_, err := filePtr.Seek(int64(offset), io.SeekStart)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	// 数据区的格式  valueLen  value
-	//              4         ?
-	lenBuffer := make([]byte, 4)
-	_, err = filePtr.Read(lenBuffer)
+	// 数据区的格式  deleted  valueLen  value
+	//              1        4         ?
+
+	buffer := make([]byte, 5)
+	_, err = filePtr.Read(buffer)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	valueLen := util.BytesToInt32(lenBuffer)
+	deleted := int8(buffer[0])
+	if deleted == 1 {
+		return nil, false, nil
+	}
+	valueLen := util.BytesToInt32(buffer[1:5])
 	valueBuffer := make([]byte, valueLen)
 	_, err = filePtr.Read(valueBuffer)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return valueBuffer, nil
+	return valueBuffer, true, nil
 }
 
 func getIndexDataFromFile(filePath string) (map[string]int32, error) {

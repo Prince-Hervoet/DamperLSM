@@ -15,9 +15,8 @@ func main() {
 
 	start := time.Now().UnixMicro()
 	// bs.Set("1", []byte("2jk3434"))
-	// bs.Set("36", []byte("2222213"))
-	// bs.Set("5", []byte("2gfdfasdhfohg"))
-	b, _ := bs.Get("1")
+	// bs.Set("1231", []byte("3434"))
+	b, _ := bs.Get("1231")
 	end := time.Now().UnixMicro()
 
 	fmt.Println((end - start))
