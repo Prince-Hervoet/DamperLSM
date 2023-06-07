@@ -116,7 +116,7 @@ func (here *MemoryController) Write(key string, value []byte) error {
 		}
 		here.running = mt
 		here.running.walMapping.Append(walBuffer)
-		here.waitQueue <- here.immuTable
+		// here.waitQueue <- here.immuTable
 	} else if res == -1 {
 		return errors.New("write error")
 	}

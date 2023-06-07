@@ -11,7 +11,7 @@ const (
 	OP_TYPE_DELETE = 2
 
 	// wal文件默认大小
-	WAL_FILE_MAX_SIZE = 524288
+	WAL_FILE_MAX_SIZE = 528244
 
 	// 魔数
 	MAGIC_NUMBER = int8(64)
