@@ -1,7 +1,7 @@
 package core
 
 import (
-	pojo "DamperLSM/po"
+	pojo "DamperLSM/pojo"
 	"DamperLSM/util"
 	"fmt"
 	"io"

@@ -97,18 +97,18 @@ func (here *mmapMemory) append(data []byte) int {
 	return 1
 }
 
-func (here *mmapMemory) read(bs []byte) (int32, error) {
-	if !here.isOpened {
-		return 0, errors.New("please open a file")
-	}
-	if here.size == 0 {
-		return 0, nil
-	}
-	ansLen := util.IntMin(len(bs), int(here.size))
-	for i := 0; i < ansLen; i++ {
-	}
-	return int32(ansLen), nil
-}
+// func (here *mmapMemory) read(bs []byte) (int32, error) {
+// 	if !here.isOpened {
+// 		return 0, errors.New("please open a file")
+// 	}
+// 	if here.size == 0 {
+// 		return 0, nil
+// 	}
+// 	ansLen := util.IntMin(len(bs), int(here.size))
+// 	for i := 0; i < ansLen; i++ {
+// 	}
+// 	return int32(ansLen), nil
+// }
 
 func (here *mmapMemory) readHeader() {
 	temp := here.mapping[0:4]
