@@ -3,8 +3,9 @@ package util
 const (
 	// 文件名称
 	DB_SAVE_FILE_NAME       = "dbfile"
-	WAL_SAVE_FILE_NAME      = "walfile"
+	WAL_SAVE_FILE_NAME      = "walfile.db"
 	IMMU_WAL_SAVE_FILE_NAME = "immuwalfile_"
+	FILE_NAME_ADD           = ".db"
 
 	// 操作类型
 	OP_TYPE_WRITE  = 1

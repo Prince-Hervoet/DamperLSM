@@ -3,6 +3,7 @@ package main
 import (
 	"DamperLSM/core"
 	"fmt"
+	"time"
 )
 
 func main() {
@@ -12,17 +13,17 @@ func main() {
 		return
 	}
 
-	// start := time.Now().UnixMicro()
+	start := time.Now().UnixMicro()
 	// bs.Set("1", []byte("2jk3434"))
-	// bs.Set("3", []byte("2222213"))
-	// bs.Set("4", []byte("2gfg"))
+	// bs.Set("36", []byte("2222213"))
+	// bs.Set("5", []byte("2gfdfasdhfohg"))
 	b, _ := bs.Get("1")
-	// end := time.Now().UnixMicro()
+	end := time.Now().UnixMicro()
 
-	// fmt.Println((end - start))
+	fmt.Println((end - start))
 	fmt.Println("ans: " + string(b))
 
-	// for {
-	// 	time.Sleep(2 * time.Second)
-	// }
+	for {
+		time.Sleep(2 * time.Second)
+	}
 }

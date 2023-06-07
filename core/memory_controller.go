@@ -1,7 +1,6 @@
 package core
 
 import (
-	"DamperLSM/pojo"
 	"DamperLSM/util"
 	"errors"
 	"io/ioutil"
@@ -9,7 +8,7 @@ import (
 	"strings"
 )
 
-type MemoryController struct {
+type memoryController struct {
 	// 正在使用的内存结构
 	running *memoryTable
 	// 正在持久化的内存结构
@@ -19,7 +18,7 @@ type MemoryController struct {
 
 type memoryTable struct {
 	fileName     string
-	walMapping   *MmapMemory
+	walMapping   *mmapMemory
 	memoryStruct *SkipTable
 }
 
@@ -28,8 +27,8 @@ type tableDataNode struct {
 	Deleted bool
 }
 
-func newMemoryController(dir string) *MemoryController {
-	return &MemoryController{
+func newMemoryController(dir string) *memoryController {
+	return &memoryController{
 		running:   nil,
 		immuTable: nil,
 		dir:       dir,
@@ -49,7 +48,7 @@ func newMemoryTable(dir, fileName string) (*memoryTable, error) {
 	}, nil
 }
 
-func (here *MemoryController) RecoverFromFiles() error {
+func (here *memoryController) recoverFromFiles() error {
 
 	hasWalFile := false
 	var st *SkipTable = nil
@@ -100,13 +99,13 @@ func (here *MemoryController) RecoverFromFiles() error {
 	return nil
 }
 
-func (here *MemoryController) write(key string, value []byte) error {
-	wf := pojo.NewWalForm(1, key, value)
+func (here *memoryController) write(key string, value []byte) error {
+	wf := newWalForm(1, key, value)
 	walBuffer := wf.ToBytes()
 	res := here.running.walMapping.append(walBuffer)
 	if res == 0 {
 		// 空间已满
-		nFileName := util.GetNewFileName(here.dir + util.IMMU_WAL_SAVE_FILE_NAME)
+		nFileName := util.GetNewFileName(here.dir+util.IMMU_WAL_SAVE_FILE_NAME) + util.FILE_NAME_ADD
 		os.Rename(here.dir+here.running.fileName, nFileName)
 		here.immuTable = here.running
 		here.immuTable.walMapping.close()
@@ -129,7 +128,7 @@ func (here *MemoryController) write(key string, value []byte) error {
 	return nil
 }
 
-func (here *MemoryController) read(key string) ([]byte, bool) {
+func (here *memoryController) read(key string) ([]byte, bool) {
 	_, info, has := here.running.memoryStruct.Get(key)
 
 	if !has && here.immuTable != nil {

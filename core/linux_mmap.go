@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-type MmapMemory struct {
+type mmapMemory struct {
 	filePath string
 	filePtr  *os.File
 	isOpened bool
@@ -17,19 +17,19 @@ type MmapMemory struct {
 	cap      int32
 }
 
-func openShareMemory() *MmapMemory {
-	return &MmapMemory{
+func openShareMemory() *mmapMemory {
+	return &mmapMemory{
 		filePath: "",
 		filePtr:  nil,
 		isOpened: false,
 	}
 }
 
-func (here *MmapMemory) Size() int32 {
+func (here *mmapMemory) Size() int32 {
 	return here.size
 }
 
-func (here *MmapMemory) openFile(filePath string, cap int32) error {
+func (here *mmapMemory) openFile(filePath string, cap int32) error {
 	if here.isOpened {
 		return errors.New("a mapping has been established")
 	}
@@ -62,7 +62,7 @@ func (here *MmapMemory) openFile(filePath string, cap int32) error {
 	return nil
 }
 
-func (here *MmapMemory) close() error {
+func (here *mmapMemory) close() error {
 	if !here.isOpened {
 		return nil
 	}
@@ -81,7 +81,7 @@ func (here *MmapMemory) close() error {
 	return nil
 }
 
-func (here *MmapMemory) append(data []byte) int {
+func (here *mmapMemory) append(data []byte) int {
 	if !here.isOpened {
 		return -1
 	} else if len(data)+int(here.size) > int(here.cap) {
@@ -98,7 +98,7 @@ func (here *MmapMemory) append(data []byte) int {
 	return 1
 }
 
-func (here *MmapMemory) read(bs []byte) (int32, error) {
+func (here *mmapMemory) read(bs []byte) (int32, error) {
 	if !here.isOpened {
 		return 0, errors.New("please open a file")
 	}
@@ -111,13 +111,13 @@ func (here *MmapMemory) read(bs []byte) (int32, error) {
 	return int32(ansLen), nil
 }
 
-func (here *MmapMemory) readHeader() {
+func (here *mmapMemory) readHeader() {
 	temp := here.mapping[1:5]
 	num := util.BytesToInt32(temp)
 	here.size = num + 5
 }
 
-func (here *MmapMemory) writeHeader(size int32) {
+func (here *mmapMemory) writeHeader(size int32) {
 	bs := util.Int32ToBytes(size)
 	for i := 1; i < 5; i++ {
 		here.mapping[i] = bs[i-1]

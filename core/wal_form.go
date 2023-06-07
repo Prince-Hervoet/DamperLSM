@@ -1,8 +1,8 @@
-package pojo
+package core
 
 import "DamperLSM/util"
 
-type WalForm struct {
+type walForm struct {
 	OpType   int8
 	KeyLen   int32
 	ValueLen int32
@@ -10,9 +10,9 @@ type WalForm struct {
 	Value    []byte
 }
 
-func NewWalForm(opType int8, key string, value []byte) *WalForm {
+func newWalForm(opType int8, key string, value []byte) *walForm {
 	keyBs := []byte(key)
-	return &WalForm{
+	return &walForm{
 		OpType:   opType,
 		KeyLen:   int32(len(keyBs)),
 		ValueLen: int32(len(value)),
@@ -21,7 +21,7 @@ func NewWalForm(opType int8, key string, value []byte) *WalForm {
 	}
 }
 
-func (here *WalForm) ToBytes() []byte {
+func (here *walForm) ToBytes() []byte {
 	ans := make([]byte, 0, 9)
 	ans = append(ans, byte(here.OpType))
 	bs := util.Int32ToBytes(here.KeyLen)

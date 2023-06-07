@@ -1,7 +1,7 @@
 package core
 
 type DamperDb struct {
-	mcer      *MemoryController
+	mcer      *memoryController
 	scer      *SstableController
 	dir       string
 	size      int64
@@ -12,14 +12,14 @@ func NewDamperDb(dir string) (*DamperDb, error) {
 
 	// 创建启动内存控制器
 	mcer := newMemoryController(dir)
-	err := mcer.RecoverFromFiles()
+	err := mcer.recoverFromFiles()
 	if err != nil {
 		return nil, err
 	}
 
 	// 创建启动磁盘映射控制器
-	scer := NewSstableController(dir)
-	err = scer.RecoverFromFiles()
+	scer := newSstableController(dir)
+	err = scer.recoverFromFiles()
 	if err != nil {
 		return nil, err
 	}

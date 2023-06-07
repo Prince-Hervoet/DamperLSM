@@ -2,6 +2,7 @@ package core
 
 import (
 	"DamperLSM/util"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -35,11 +36,12 @@ type SstableHeadNode struct {
 type SstableNode struct {
 	next     *SstableNode
 	fileName string
+	file     *os.File
 	count    int32
 	keys     map[string]int32
 }
 
-func NewSstableController(dir string) *SstableController {
+func newSstableController(dir string) *SstableController {
 	headList := make([]*SstableHeadNode, util.SSTABLE_LEVEL_SIZE)
 	for i := 0; i < len(headList); i++ {
 		headList[i] = &SstableHeadNode{
@@ -71,8 +73,7 @@ func (here *SstableController) searchData(key string) ([]byte, bool) {
 		for node != nil {
 			if _, has := node.keys[key]; has {
 				offset := node.keys[key]
-				filePath := here.dir + node.fileName
-				value, err := searchKvFromFile(filePath, offset)
+				value, err := searchKvFromFile(node.file, offset)
 				if err != nil {
 					return nil, false
 				}
@@ -84,7 +85,7 @@ func (here *SstableController) searchData(key string) ([]byte, bool) {
 	return nil, false
 }
 
-func (here *SstableController) RecoverFromFiles() error {
+func (here *SstableController) recoverFromFiles() error {
 	// dbfile_1_2
 	dirInfo, err := ioutil.ReadDir(here.dir)
 	if err != nil {
@@ -120,29 +121,39 @@ func (here *SstableController) RecoverFromFiles() error {
 			continue
 		}
 
+		file, err := os.Open(here.dir + fileName)
+		if err != nil {
+			return err
+		}
+
 		node := &SstableNode{
 			next:     nil,
 			fileName: fileName,
+			file:     file,
 			count:    int32(count),
 			keys:     keys,
 		}
 		here.addNode(int32(levelNumber), node)
 	}
-	go here.DumpTaskFunc()
+	go here.dumpTaskFunc()
 	return nil
 }
 
-func (here *SstableController) DumpTaskFunc() {
+func (here *SstableController) dumpTaskFunc() {
 	for v := range dumpQueue {
-		here.DumpMemory(v)
+		here.dumpMemory(v)
+		// filePath := here.dir + v.fileName
+		err := os.Remove(v.fileName)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
 	}
 }
 
-func (here *SstableController) DumpMemory(immuTable *memoryTable) {
+func (here *SstableController) dumpMemory(immuTable *memoryTable) {
 	if immuTable == nil {
 		return
 	}
-
 	id := strconv.FormatInt(int64(here.headList[0].size+1), 10)
 	nFileName := util.DB_SAVE_FILE_NAME + "_" + "1" + "_" + id
 	filePtr, err := os.OpenFile(here.dir+nFileName, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
@@ -222,14 +233,11 @@ func (here *SstableController) addNode(level int32, node *SstableNode) {
 	headNode.size += 1
 }
 
-func searchKvFromFile(filePath string, offset int32) ([]byte, error) {
-	filePtr, err := os.OpenFile(filePath, os.O_RDWR, 0666)
-	if err != nil {
-		return nil, err
-	}
-	defer filePtr.Close()
+func searchKvFromFile(filePtr *os.File, offset int32) ([]byte, error) {
+	defer filePtr.Seek(0, 0)
+
 	// 设置偏移量
-	_, err = filePtr.Seek(int64(offset), io.SeekStart)
+	_, err := filePtr.Seek(int64(offset), io.SeekStart)
 	if err != nil {
 		return nil, err
 	}
