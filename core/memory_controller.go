@@ -4,6 +4,7 @@ import (
 	"DamperLSM/pojo"
 	"DamperLSM/util"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -51,7 +52,7 @@ func newMemoryTable(dir, fileName string) (*MemoryTable, error) {
 	}, nil
 }
 
-func (here *MemoryController) Init() error {
+func (here *MemoryController) RecoverFromFiles() error {
 	walFileName := ""
 	immuWalFileNames := make([]string, 0, 8)
 
@@ -116,7 +117,7 @@ func (here *MemoryController) Write(key string, value []byte) error {
 		}
 		here.running = mt
 		here.running.walMapping.Append(walBuffer)
-		// here.waitQueue <- here.immuTable
+		here.waitQueue <- here.immuTable
 	} else if res == -1 {
 		return errors.New("write error")
 	}
@@ -127,19 +128,33 @@ func (here *MemoryController) Write(key string, value []byte) error {
 	return nil
 }
 
-func (here *MemoryController) Read(key string) ([]byte, error) {
-	_, v, err := here.running.memoryStruct.Get(key)
-	if err != nil {
-		return nil, err
+func (here *MemoryController) Read(key string) ([]byte, bool) {
+	_, info, has := here.running.memoryStruct.Get(key)
+
+	if !has {
+		_, info, has = here.immuTable.memoryStruct.Get(key)
 	}
-	if v.Deleted {
-		return nil, nil
+
+	if !has {
+		_, info.Value, has = here.scer.SearchData(key)
 	}
-	return v.Value, nil
+
+	if !has {
+		return nil, has
+	}
+
+	if info != nil {
+		if info.Deleted {
+			return nil, false
+		}
+		return info.Value, true
+	}
+	return info.Value, true
 }
 
 func (here *MemoryController) flush() {
 	for v := range here.waitQueue {
+		fmt.Println("asdfe3333")
 		here.scer.DumpMemory(v)
 	}
 }
@@ -212,15 +227,16 @@ func ReadWalFileToSkipTable(filePath string) (*SkipTable, error) {
 
 		current += int32(1 + 4 + 4 + keyLen + valueLen)
 
-		if op == util.OP_TYPE_DELETE {
-			continue
-		}
-
 		key := string(keyBuffer)
+
+		deleted := false
+		if op == util.OP_TYPE_DELETE {
+			deleted = true
+		}
 
 		td := &TableDataNode{
 			Value:   valueBuffer,
-			Deleted: false,
+			Deleted: deleted,
 		}
 		st.Insert(key, td)
 	}

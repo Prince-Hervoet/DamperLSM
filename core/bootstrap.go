@@ -14,7 +14,7 @@ type Bootstrap struct {
 
 func NewBootstrap(dir string) (*Bootstrap, error) {
 	mcer := NewMemoryController(dir)
-	err := mcer.Init()
+	err := mcer.RecoverFromFiles()
 	if err != nil {
 		return nil, err
 	}
@@ -34,12 +34,9 @@ func (here *Bootstrap) Set(key string, value []byte) error {
 	return nil
 }
 
-func (here *Bootstrap) Get(key string) ([]byte, error) {
-	v, err := here.mcer.Read(key)
-	if err != nil {
-		return nil, err
-	}
-	return v, nil
+func (here *Bootstrap) Get(key string) ([]byte, bool) {
+	v, has := here.mcer.Read(key)
+	return v, has
 }
 
 func (here *Bootstrap) Remove(key string) {

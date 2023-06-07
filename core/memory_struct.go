@@ -1,7 +1,6 @@
 package core
 
 import (
-	"errors"
 	"math/rand"
 )
 
@@ -41,6 +40,9 @@ func newSkipTableNode(key string, value *TableDataNode, needLevel int32) *SkipTa
 }
 
 func (here *SkipTable) Insert(key string, value *TableDataNode) {
+	if key == "" {
+		return
+	}
 	needLevel := int32(0)
 	for (rand.Uint32()&0xFFFF) < uint32(0xFFFF*LEVEL_FLAG) && (needLevel < MAX_LEVEL-1) {
 		needLevel += 1
@@ -72,9 +74,9 @@ func (here *SkipTable) Insert(key string, value *TableDataNode) {
 	here.size += 1
 }
 
-func (here *SkipTable) Get(key string) (string, *TableDataNode, error) {
+func (here *SkipTable) Get(key string) (string, *TableDataNode, bool) {
 	if here.size == 0 {
-		return "", nil, errors.New("you don't have this key")
+		return "", nil, false
 	}
 	run := here.headNode
 	for i := here.maxLevel; i >= 0; i-- {
@@ -82,10 +84,10 @@ func (here *SkipTable) Get(key string) (string, *TableDataNode, error) {
 			run = run.Levels[i]
 		}
 		if run.Levels[i] != nil && run.Levels[i].Key == key {
-			return key, run.Levels[i].Value, nil
+			return key, run.Levels[i].Value, true
 		}
 	}
-	return "", nil, errors.New("you don't have this key")
+	return "", nil, false
 }
 
 func (here *SkipTable) Remove(key string) {

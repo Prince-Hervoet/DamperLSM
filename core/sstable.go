@@ -58,9 +58,9 @@ func NewSstableController(dir string) *SstableController {
 	}
 }
 
-func (here *SstableController) SearchData(key string) (string, []byte, error) {
+func (here *SstableController) SearchData(key string) (string, []byte, bool) {
 	if here.nodeSize == 0 {
-		return "", nil, nil
+		return "", nil, false
 	}
 	headList := here.headList
 	for i := 0; i < len(headList); i++ {
@@ -75,14 +75,14 @@ func (here *SstableController) SearchData(key string) (string, []byte, error) {
 				filePath := here.dir + node.fileName
 				key, value, err := searchKvFromFile(filePath, offset)
 				if err != nil {
-					return "", nil, err
+					return "", nil, false
 				}
-				return key, value, nil
+				return key, value, true
 			}
 			node = node.next
 		}
 	}
-	return "", nil, nil
+	return "", nil, false
 }
 
 func (here *SstableController) RecoverFromFiles() error {
@@ -136,8 +136,10 @@ func (here *SstableController) DumpMemory(immuTable *MemoryTable) {
 	if immuTable == nil {
 		return
 	}
+
 	id := strconv.FormatInt(int64(here.headList[0].size+1), 10)
-	filePtr, err := os.OpenFile(here.dir+id, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+	nFileName := util.DB_SAVE_FILE_NAME + "_" + "1" + "_" + id
+	filePtr, err := os.OpenFile(here.dir+nFileName, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
 	if err != nil {
 		return
 	}
@@ -210,17 +212,7 @@ func (here *SstableController) addNode(level int32, node *SstableNode) {
 	if !isOk {
 		run.next = node
 	}
-}
-
-func readMeta(file *os.File) (int32, int32, error) {
-	buffer := make([]byte, 8)
-	_, err := file.Read(buffer)
-	if err != nil {
-		return -1, -1, nil
-	}
-	indexLen := util.BytesToInt32(buffer[0:4])
-	dataLen := util.BytesToInt32(buffer[4:])
-	return indexLen, dataLen, nil
+	headNode.size += 1
 }
 
 func searchKvFromFile(filePath string, offset int32) (string, []byte, error) {
