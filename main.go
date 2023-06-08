@@ -15,10 +15,10 @@ func main() {
 	}
 
 	start := time.Now().UnixMicro()
-	for i := 0; i < 10000; i++ {
-		bs.Set(strconv.FormatInt(int64(i), 10), []byte("12234234234132ajilsdfjl123123123ij3123"))
+	for i := 0; i < 400000; i++ {
+		bs.Set(strconv.FormatInt(int64(i), 10), []byte("123324241agsdfgsdfgsdfg23kjadfkj123"))
 	}
-	b, _ := bs.Get("3")
+	b, _ := bs.Get("1")
 	end := time.Now().UnixMicro()
 
 	fmt.Print("耗时: ")

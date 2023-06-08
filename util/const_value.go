@@ -5,6 +5,7 @@ const (
 	DB_SAVE_FILE_NAME       = "dbfile"
 	WAL_SAVE_FILE_NAME      = "walfile.db"
 	IMMU_WAL_SAVE_FILE_NAME = "immuwalfile_"
+	HALF_DB_SAVE_FILE_NAME  = "halffile"
 	FILE_NAME_ADD           = ".db"
 
 	// 操作类型
@@ -12,7 +13,7 @@ const (
 	OP_TYPE_DELETE = 1
 
 	// wal文件默认大小
-	WAL_FILE_MAX_SIZE = 131072
+	WAL_FILE_MAX_SIZE = 262144
 
 	// 魔数
 	MAGIC_NUMBER = int8(64)

@@ -141,14 +141,9 @@ func (here *SstableController) recoverFromFiles() error {
 
 func (here *SstableController) dumpTaskFunc() {
 	for v := range dumpQueue {
-		fileName, count := here.dumpMemory(v)
+		fileName, count, keys := here.dumpMemory(v)
 		filepath := here.dir + fileName
 		file, err := os.Open(filepath)
-		if err != nil {
-			fmt.Println(err.Error())
-			continue
-		}
-		keys, err := getIndexDataFromFile(filepath)
 		if err != nil {
 			fmt.Println(err.Error())
 			continue
@@ -168,30 +163,15 @@ func (here *SstableController) dumpTaskFunc() {
 	}
 }
 
-// func (here *SstableController) dumpMemoryMmap(immuTable *memoryTable) (string, int32) {
-// 	if immuTable == nil {
-// 		return "", -1
-// 	}
-// 	count := here.headList[0].size + 1
-// 	id := strconv.FormatInt(int64(count), 10)
-// 	nFileName := util.DB_SAVE_FILE_NAME + "_" + "1" + "_" + id
-// 	mm := openShareMemory()
-// 	err := mm.openFile(here.dir+nFileName, util.WAL_FILE_MAX_SIZE)
-// 	if err != nil {
-// 		return "", -1
-// 	}
-
-// }
-
-// 将数据持久化到磁盘文件中
-func (here *SstableController) dumpMemory(immuTable *memoryTable) (string, int32) {
+func (here *SstableController) dumpMemoryMmap(immuTable *memoryTable) (string, int32) {
 	if immuTable == nil {
 		return "", -1
 	}
 	count := here.headList[0].size + 1
 	id := strconv.FormatInt(int64(count), 10)
 	nFileName := util.DB_SAVE_FILE_NAME + "_" + "1" + "_" + id
-	filePtr, err := os.OpenFile(here.dir+nFileName, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+	mm := openShareMemory()
+	err := mm.openFile(here.dir+nFileName, util.WAL_FILE_MAX_SIZE+4)
 	if err != nil {
 		return "", -1
 	}
@@ -207,7 +187,7 @@ func (here *SstableController) dumpMemory(immuTable *memoryTable) (string, int32
 		value := run.Value
 		valueLen := int32(len(value.Value))
 		daf := pojo.NewDataAreaForm(value.Deleted, valueLen, value.Value)
-		filePtr.Write(daf.ToBytes())
+		mm.append(daf.ToBytes())
 		offsets = append(offsets, dataSizeRun)
 		dataSizeRun += (1 + 4 + valueLen)
 		run = run.Levels[0]
@@ -219,19 +199,89 @@ func (here *SstableController) dumpMemory(immuTable *memoryTable) (string, int32
 	for run != nil {
 		keyBs := []byte(run.Key)
 		iaf := pojo.NewIndexAreaForm(offsets[i], int32(len(keyBs)), run.Key)
-		filePtr.Write(iaf.ToBytes())
+		mm.append(iaf.ToBytes())
 		indexSizeRun += (4 + 4 + int32(len(keyBs)))
 		run = run.Levels[0]
 		i += 1
 	}
 
 	// 写入元数据区
+	dataAreaLenBs := util.Int32ToBytes(dataSizeRun)
+	indexAreaLenBs := util.Int32ToBytes(indexSizeRun)
+	mm.append(dataAreaLenBs)
+	mm.append(indexAreaLenBs)
+	fmt.Println(mm.mapping)
+	mm.close()
+	mm = nil
+	return nFileName, count
+}
+
+// 将数据持久化到磁盘文件中
+func (here *SstableController) dumpMemory(immuTable *memoryTable) (string, int32, map[string]int32) {
+	if immuTable == nil {
+		return "", -1, nil
+	}
+	count := here.headList[0].size + 1
+	id := strconv.FormatInt(int64(count), 10)
+	nFileName := util.DB_SAVE_FILE_NAME + "_" + "1" + "_" + id
+	filePtr, err := os.OpenFile(here.dir+nFileName, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+	if err != nil {
+		return "", -1, nil
+	}
+
+	defer filePtr.Close()
+
+	target := immuTable.memoryStruct
+	run := target.headNode.Levels[0]
+	offsets := make([]int32, 0, target.size)
+	dataSizeRun := int32(0)
+	indexSizeRun := int32(0)
+	keys := make(map[string]int32)
+	batch := make([]byte, 0, 1024)
+
+	daf := pojo.DataAreaForm{}
+	// 写入数据区
+	for run != nil {
+		value := run.Value
+		valueLen := int32(len(value.Value))
+		daf.Deleted = value.Deleted
+		daf.ValueLen = valueLen
+		daf.Value = value.Value
+		batch = append(batch, daf.ToBytes()...)
+		offsets = append(offsets, dataSizeRun)
+		dataSizeRun += (1 + 4 + valueLen)
+		run = run.Levels[0]
+	}
+	filePtr.Write(batch)
+
+	batch = make([]byte, 0, 1024)
+	iaf := pojo.IndexAreaForm{}
+	// 写入索引区
+	run = target.headNode.Levels[0]
+	i := 0
+	for run != nil {
+		keyBs := []byte(run.Key)
+		keyLen := int32(len(keyBs))
+		iaf.Offset = offsets[i]
+		iaf.KeyLen = keyLen
+		iaf.Key = run.Key
+		batch = append(batch, iaf.ToBytes()...)
+		indexSizeRun += (4 + 4 + keyLen)
+		keys[run.Key] = iaf.Offset
+		run = run.Levels[0]
+		i += 1
+	}
+	filePtr.Write(batch)
+
+	batch = make([]byte, 0, 8)
+	// 写入元数据区
 	indexLenBs := util.Int32ToBytes(indexSizeRun)
 	dataLenBs := util.Int32ToBytes(dataSizeRun)
-	filePtr.Write(dataLenBs)
-	filePtr.Write(indexLenBs)
-
-	return nFileName, count
+	batch = append(batch, dataLenBs...)
+	batch = append(batch, indexLenBs...)
+	filePtr.Write(batch)
+	batch = nil
+	return nFileName, count, keys
 }
 
 func (here *SstableController) addNode(level int32, node *SstableNode) {
@@ -301,12 +351,7 @@ func getIndexDataFromFile(filePath string) (map[string]int32, error) {
 	defer filePtr.Close()
 
 	keys := make(map[string]int32)
-	_, err = filePtr.Seek(0, io.SeekEnd)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = filePtr.Seek(-8, io.SeekCurrent)
+	_, err = filePtr.Seek(-8, io.SeekEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -337,6 +382,7 @@ func getIndexDataFromFile(filePath string) (map[string]int32, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	current := int32(0)
 	for current < indexAreaLen {
 		offset := util.BytesToInt32(buffer[current : current+4])
